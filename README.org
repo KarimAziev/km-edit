@@ -1,0 +1,43 @@
+* km-edit
+
+Miscellaneous editing utils for Emacs.
+
+** Installation
+
+*** Manual
+
+Download the source code and put it wherever you like, e.g. into =~/.emacs.d/km-edit/=
+
+#+begin_src shell :eval no
+git clone https://github.com/KarimAziev/km-edit.git ~/.emacs.d/km-edit/
+#+end_src
+
+Add the downloaded directory to the load path:
+
+#+begin_src elisp :eval no
+(add-to-list 'load-path "~/.emacs.d/km-edit/")
+(require 'km-edit)
+#+end_src
+
+#+begin_src elisp :eval no
+(use-package km-edit
+  :straight (km-edit
+             :repo "KarimAziev/km-edit"
+             :type git
+             :host github)
+  :commands (km-edit-indent-buffer-or-region
+             km-edit-recode-buffer-or-region
+             km-edit-delete-line
+             km-edit-yank-pop-forwards))
+#+end_src
+
+** Commands
+
+*** ~km-edit-recode-buffer-or-region~  (coding-system)
+Encode and decode active region or whole buffer content to =coding-system=.
+*** ~km-edit-delete-line~
+Remove line without putting to kill ring.
+*** ~km-edit-yank-pop-forwards~  (arg)
+Call =yank-pop= with =arg= if the previous command was yank.
+*** ~km-edit-indent-buffer-or-region~
+Indent active region or the entire buffer.
