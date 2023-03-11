@@ -6,7 +6,7 @@
 ;; URL: https://github.com/KarimAziev/km-edit
 ;; Version: 0.1.0
 ;; Keywords: lisp
-;; Package-Requires: ((emacs "24.1"))
+;; Package-Requires: ((emacs "26.1"))
 
 ;; This file is NOT part of GNU Emacs.
 
@@ -28,6 +28,8 @@
 ;; Miscellaneous editing utils
 
 ;;; Code:
+
+(require 'subr-x)
 
 ;;;###autoload
 (defun km-edit-indent-buffer-or-region ()
@@ -88,6 +90,53 @@
                      end)
       (insert text)
       (goto-char pos))))
+
+;;;###autoload
+(defun km-edit-smart-beginning-of-line ()
+  "Move point to first non-whitespace character or beginning-of-line."
+  (interactive "^")
+  (let ((oldpos (point)))
+    (back-to-indentation)
+    (and (= oldpos (point))
+         (beginning-of-line))))
+
+(defvar-local km-edit--quote-or-unquote-last-rep nil)
+
+;;;###autoload
+(defun km-edit-quote-or-unquote-at-point ()
+  "Add or remove string quotes for thing at point."
+  (interactive)
+  (unless (eq last-command 'km-edit-quote-or-unquote-at-point)
+    (setq km-edit--quote-or-unquote-last-rep nil))
+  (if-let* ((stx (seq-find (apply-partially 'nth 3)
+                           (list (syntax-ppss (point))
+                                 (syntax-ppss (1+ (point))))))
+            (str-char (nth 3 stx))
+            (beg (nth 8 stx))
+            (end (save-excursion
+                   (goto-char beg)
+                   (forward-sexp 1)
+                   (point)))
+            (content (buffer-substring-no-properties
+                      beg end)))
+      (let ((rep (substring-no-properties content 1 (1- (length content)))))
+        (replace-region-contents beg end (lambda () rep))
+        (setq km-edit--quote-or-unquote-last-rep (list
+                                                  content
+                                                  beg
+                                                  (+ beg
+                                                     (length rep)))))
+    (when-let* ((bounds (if km-edit--quote-or-unquote-last-rep
+                            (cons (nth 1 km-edit--quote-or-unquote-last-rep)
+                                  (nth 2 km-edit--quote-or-unquote-last-rep))
+                          (bounds-of-thing-at-point 'symbol)))
+                (item (or (car km-edit--quote-or-unquote-last-rep)
+                          (prin1-to-string
+                           (buffer-substring-no-properties (car bounds)
+                                                           (cdr bounds))))))
+      (replace-region-contents (car bounds)
+                               (cdr bounds)
+                               (lambda () item)))))
 
 (provide 'km-edit)
 ;;; km-edit.el ends here

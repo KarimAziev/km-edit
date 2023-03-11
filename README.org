@@ -25,14 +25,18 @@ Add the downloaded directory to the load path:
              :repo "KarimAziev/km-edit"
              :type git
              :host github)
-  :commands (km-edit-indent-buffer-or-region
-             km-edit-recode-buffer-or-region
-             km-edit-delete-line
-             km-edit-yank-pop-forwards))
+  :bind (("C-c TAB" . km-edit-indent-buffer-or-region)
+         ("M-D" . km-edit-delete-line)
+         ("C-a" . km-edit-smart-beginning-of-line)
+         ("C-M-y" . km-edit-yank-pop-forwards)
+         ("C-'" . km-edit-quote-or-unquote-at-point)))
 #+end_src
 
 ** Commands
-
+*** ~km-edit-quote-or-unquote-at-point~
+Add or remove string quotes for thing at point.
+*** ~km-edit-smart-beginning-of-line~
+Move point to first non-whitespace character or beginning-of-line.
 *** ~km-edit-recode-buffer-or-region~  (coding-system)
 Encode and decode active region or whole buffer content to =coding-system=.
 *** ~km-edit-delete-line~
