@@ -52,10 +52,8 @@
   "Remove line without putting to kill ring."
   (interactive)
   (save-excursion
-    (let ((beg (point))
-          (end (progn (end-of-line)
-                      (point))))
-      (delete-region beg end))))
+    (delete-region (point)
+                   (line-end-position))))
 
 (defun km-edit-recode-string (str coding-system)
   "Encode and decode string STR to CODING-SYSTEM."
