@@ -108,7 +108,7 @@
   (interactive)
   (unless (eq last-command 'km-edit-quote-or-unquote-at-point)
     (setq km-edit--quote-or-unquote-last-rep nil))
-  (if-let* ((stx (seq-find (apply-partially 'nth 3)
+  (if-let* ((stx (seq-find (apply-partially #'nth 3)
                            (list (syntax-ppss (point))
                                  (syntax-ppss (1+ (point))))))
             (str-char (nth 3 stx))
@@ -137,6 +137,48 @@
       (replace-region-contents (car bounds)
                                (cdr bounds)
                                (lambda () item)))))
+
+
+;;;###autoload
+(defun km-edit-dwim-insert-key-description ()
+  "Read and insert a description of keystrokes.
+Inside string also remove old content.
+If parent form is `define-key' and point is not inside string,
+insert either vector or kbd call.
+In other cases insert string."
+  (interactive)
+  (let* ((key (read-key-sequence "Key:\s" nil t))
+         (inside-str (nth 3 (syntax-ppss (point))))
+         (str-start (when inside-str
+                      (nth 8 (syntax-ppss (point)))))
+         (inside-define-key
+          (save-excursion
+            (when str-start
+              (goto-char str-start))
+            (let ((pos (point)))
+              (ignore-errors
+                (backward-up-list)
+                (unless (equal pos (point))
+                  (eq 'define-key (car-safe
+                                   (sexp-at-point))))))))
+         (descr (cond ((and (vectorp key)
+                            inside-define-key
+                            (not inside-str))
+                       key)
+                      (t (key-description key))))
+         (result (cond ((and inside-str)
+                        (prin1-to-string descr))
+                       ((and inside-define-key
+                             (not (vectorp descr)))
+                        (prin1-to-string `(kbd ,descr)))
+                       (t
+                        (prin1-to-string descr)))))
+    (when str-start
+      (while (nth 3 (syntax-ppss (point)))
+        (forward-char 1))
+      (delete-region str-start (point)))
+    (insert result)
+    (forward-char -1)))
 
 (provide 'km-edit)
 ;;; km-edit.el ends here
