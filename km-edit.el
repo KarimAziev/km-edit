@@ -138,12 +138,20 @@
                                (cdr bounds)
                                (lambda () item)))))
 
+(defcustom km-edit-dwim-kbd-forms '(define-key local-set-key
+                                               global-set-key)
+  "List of allowed parent symbols to insert keys wrapped in kbd call.
+See `km-edit-dwim-insert-key-description'."
+  :type '(repeat symbol)
+  :group 'km-edit)
+
 
 ;;;###autoload
 (defun km-edit-dwim-insert-key-description ()
   "Read and insert a description of keystrokes.
 Inside string also remove old content.
-If parent form is `define-key' and point is not inside string,
+If parent form is a symbol listed in `km-edit-dwim-kbd-forms'
+and point is not inside string,
 insert either vector or kbd call.
 In other cases insert string."
   (interactive)
@@ -159,8 +167,9 @@ In other cases insert string."
               (ignore-errors
                 (backward-up-list)
                 (unless (equal pos (point))
-                  (eq 'define-key (car-safe
-                                   (sexp-at-point))))))))
+                  (memq (car-safe
+                         (sexp-at-point))
+                        km-edit-dwim-kbd-forms))))))
          (descr (cond ((and (vectorp key)
                             inside-define-key
                             (not inside-str))
