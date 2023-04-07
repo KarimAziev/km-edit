@@ -189,5 +189,54 @@ In other cases insert string."
     (insert result)
     (forward-char -1)))
 
+;;;###autoload
+(defun km-edit-copy-sexp-or-region-at-point ()
+  "Copy region or sexp at point."
+  (interactive)
+  (when-let ((bounds (or (and (region-active-p)
+                              (car (region-bounds)))
+                         (bounds-of-thing-at-point 'sexp))))
+    (if (called-interactively-p 'any)
+        (kill-new (buffer-substring-no-properties
+                   (car bounds)
+                   (cdr bounds)))
+      (buffer-substring-no-properties
+       (car bounds)
+       (cdr bounds)))))
+
+(defun km-edit-get-region ()
+  "Return current active region as string or nil."
+  (when (and (region-active-p)
+             (use-region-p))
+    (string-trim (buffer-substring-no-properties
+                  (region-beginning)
+                  (region-end)))))
+
+;;;###autoload
+(defun km-edit-copy-prin1-to-string-at-point ()
+  "Return a string with the printed representation of active region or sexp."
+  (interactive)
+  (when-let ((content (km-edit-copy-sexp-or-region-at-point)))
+    (if (called-interactively-p 'any)
+        (kill-new (prin1-to-string content))
+      (prin1-to-string content))))
+
+;;;###autoload
+(defun km-edit-copy-prin1-to-string-no-newlines ()
+  "Return a string with the printed representation of region without new lines."
+  (interactive)
+  (require 'subr-x)
+  (when-let ((content (string-join
+                       (split-string
+                        (km-edit-copy-sexp-or-region-at-point)
+                        (if (yes-or-no-p "Remove multi spaces?")
+                            nil "\n")
+                        t)
+                       "\s")))
+    (if (called-interactively-p 'any)
+        (kill-new (prin1-to-string content))
+      (prin1-to-string content))))
+
+
 (provide 'km-edit)
 ;;; km-edit.el ends here
