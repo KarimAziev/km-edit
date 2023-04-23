@@ -237,6 +237,70 @@ In other cases insert string."
         (kill-new (prin1-to-string content))
       (prin1-to-string content))))
 
+;;;###autoload
+(defun km-edit-recode-region (beg end)
+  "Try all possible character encodings to re-decode region between BEG and END.
+Show results in minibuffer completions and finally recode the region with
+selected one."
+  (interactive "r")
+  (let ((inhibit-read-only t))
+    (let* ((str (buffer-substring-no-properties beg
+                                                end))
+           (codings (find-coding-systems-string str))
+           (alist (mapcan (lambda (new-coding)
+                            (mapcar (lambda (coding)
+                                      (with-temp-buffer
+                                        (erase-buffer)
+                                        (insert
+                                         (substring-no-properties str))
+                                        (recode-region (point-min)
+                                                       (point-max)
+                                                       new-coding coding)
+                                        (cons (substring-no-properties
+                                               (buffer-string))
+                                              (cons new-coding coding))))
+                                    codings))
+                          coding-system-list))
+           (annot-fn (lambda (str)
+                       (or (pcase-let ((`(,new-coding ,old-coding)
+                                        (cdr (assoc-string str alist))))
+                             (format (propertize
+                                      (concat
+                                       (propertize " " 'display
+                                                   '(space
+                                                     :align-to
+                                                     40))
+                                       " %s (from %s)")
+                                      'face 'completions-annotations)
+                                     new-coding old-coding)))))
+           (cell (cdr (assoc (completing-read "Select best result: "
+                                              (lambda
+                                                (str
+                                                 pred
+                                                 action)
+                                                (if
+                                                    (eq
+                                                     action
+                                                     'metadata)
+                                                    `(metadata
+                                                      (annotation-function
+                                                       .
+                                                       ,annot-fn))
+                                                  (complete-with-action
+                                                   action
+                                                   alist
+                                                   str
+                                                   pred)))
+                                              nil
+                                              t)
+                             alist))))
+      (recode-region beg end (car cell)
+                     (cdr cell))
+      (message
+       "Re-decoded by NEW-CODING %s (previously decoded by CODING) %s"
+       (car cell)
+       (cdr cell)))))
+
 
 (provide 'km-edit)
 ;;; km-edit.el ends here
