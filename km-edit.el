@@ -7,6 +7,7 @@
 ;; Version: 0.1.0
 ;; Keywords: lisp
 ;; Package-Requires: ((emacs "26.1"))
+;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; This file is NOT part of GNU Emacs.
 
@@ -300,6 +301,96 @@ selected one."
        "Re-decoded by NEW-CODING %s (previously decoded by CODING) %s"
        (car cell)
        (cdr cell)))))
+
+(defun km-edit-elisp-to-doc-str (str)
+  "Escape open parentheses and unescaped single and double quotes in STR."
+  (let ((normalized (prin1-to-string str)))
+    (replace-regexp-in-string
+     "\\(^[(]\\|[']\\)"
+     (lambda (s)
+       (concat "\\\\\=" s))
+     (substring-no-properties normalized 1 (1- (length normalized))))))
+
+;;;###autoload
+(defun km-edit-copy-as-elisp-doc-str (beg end)
+  "Copy region between BEG and END and escape open parentheses and quotes."
+  (interactive "r")
+  (when (and (region-active-p)
+             (use-region-p))
+    (let ((rep
+           (km-edit-elisp-to-doc-str
+            (buffer-substring-no-properties beg end))))
+      (kill-new rep)
+      (message "Copied:\n%s" rep)
+      rep)))
+
+;;;###autoload
+(defun km-edit-unqote-region (beg end)
+  "Replace region between BEG and END to non string."
+  (interactive "r")
+  (let* ((reg (buffer-substring-no-properties
+               beg
+               end))
+         (rep
+          (when (and (string-prefix-p "\"" reg)
+                     (string-suffix-p "\"" reg))
+            (replace-regexp-in-string "\\\\\"" "\""
+                                      (buffer-substring-no-properties
+                                       (1+
+                                        beg)
+                                       (1-
+                                        end))))))
+    (replace-region-contents beg end (lambda () rep))))
+
+
+;;;###autoload
+(defun km-edit-split-string ()
+  "Split active region to strings.
+For example, inside string:
+
+\"add html head extra\" => \"add\" \"html\" \"head\" \"extra\"
+
+a b => \"a\" \"b\"."
+  (interactive)
+  (pcase-let
+      ((`(,start . ,end)
+        (if (and
+             (region-active-p)
+             (use-region-p))
+            (cons (region-beginning)
+                  (region-end))
+          (when-let ((str-start (nth 8 (syntax-ppss (point)))))
+            (goto-char str-start))
+          (when (looking-at "\"")
+            (cons (point)
+                  (save-excursion
+                    (forward-sexp 1)
+                    (point)))))))
+    (when-let* ((reg
+                 (when (and start end)
+                   (buffer-substring-no-properties start end)))
+                (replacement (mapconcat #'prin1-to-string
+                                        (split-string
+                                         (if (string-match-p "^\""
+                                                             reg)
+                                             (condition-case  nil
+                                                 (car-safe (read-from-string
+                                                            reg))
+                                               (error reg))
+                                           reg))
+                                        "\s"))
+                (overlay (make-overlay start end)))
+      (when (unwind-protect
+                (progn (overlay-put overlay 'face 'error)
+                       (overlay-put overlay 'after-string
+                                    (concat
+                                     "\s"
+                                     (propertize replacement
+                                                 'face 'success)))
+                       (yes-or-no-p "Replace region?"))
+              (delete-overlay overlay))
+        (when (fboundp 'replace-region-contents)
+          (replace-region-contents start end (lambda () replacement)))))))
 
 
 (provide 'km-edit)

@@ -34,17 +34,26 @@ Add the downloaded directory to the load path:
 #+end_src
 
 ** Commands
+
+*** ~km-edit-recode-region~  (beg end)
+Try all possible character encodings to re-decode region between =beg= and =end=. Show results in minibuffer completions and finally recode the region with selected one.
+*** ~km-edit-copy-prin1-to-string-no-newlines~
+Return a string with the printed representation of region without new lines.
+*** ~km-edit-copy-prin1-to-string-at-point~
+Return a string with the printed representation of active region or sexp.
+*** ~km-edit-copy-sexp-or-region-at-point~
+Copy region or sexp at point.
+*** ~km-edit-dwim-insert-key-description~
+Read and insert a description of keystrokes. Inside string also remove old content. If parent form is a symbol listed in =km-edit-dwim-kbd-forms= and point is not inside string, insert either vector or kbd call. In other cases insert string.
 *** ~km-edit-quote-or-unquote-at-point~
 Add or remove string quotes for thing at point.
 *** ~km-edit-smart-beginning-of-line~
 Move point to first non-whitespace character or beginning-of-line.
-*** ~km-edit-recode-buffer-or-region~
+*** ~km-edit-recode-buffer-or-region~  (coding-system)
 Encode and decode active region or whole buffer content to =coding-system=.
 *** ~km-edit-delete-line~
 Remove line without putting to kill ring.
-*** ~km-edit-yank-pop-forwards~
+*** ~km-edit-yank-pop-forwards~  (arg)
 Call =yank-pop= with =arg= if the previous command was yank.
 *** ~km-edit-indent-buffer-or-region~
 Indent active region or the entire buffer.
-*** ~km-edit-dwim-insert-key-description~
-Read and insert a description of keystrokes. Inside string also remove old content. If parent form is a symbol listed in the custom variable =km-edit-dwim-kbd-forms= and point is not inside string, insert either vector or kbd call. In other cases insert string.
