@@ -302,6 +302,28 @@ selected one."
        (car cell)
        (cdr cell)))))
 
+(defun km-edit-org-elisp-to-doc-str (str)
+  "Convert description STR in `org-mode' format to elisp documentation string."
+  (with-temp-buffer
+    (insert str)
+    (while (re-search-backward "[=~]\\([^=~]+\\)[=~]" nil t 1)
+      (let ((value (match-string-no-properties 1)))
+        (replace-match (upcase value))))
+    (buffer-string)))
+
+;;;###autoload
+(defun km-edit-copy-org-as-elisp-doc (beg end)
+  "Copy region between BEG and END and escape open parentheses and quotes."
+  (interactive "r")
+  (when (and (region-active-p)
+             (use-region-p))
+    (let ((rep
+           (km-edit-org-elisp-to-doc-str
+            (buffer-substring-no-properties beg end))))
+      (kill-new rep)
+      (message "Copied:\n%s" rep)
+      rep)))
+
 (defun km-edit-elisp-to-doc-str (str)
   "Escape open parentheses and unescaped single and double quotes in STR."
   (let ((normalized (prin1-to-string str)))
