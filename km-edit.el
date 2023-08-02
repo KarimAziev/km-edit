@@ -66,6 +66,31 @@
     coding-system)
    coding-system))
 
+(defun km-edit-confirm-and-replace-region (beg end replacement)
+  "Confirm and replace region with REPLACEMENT text.
+
+Argument REPLACEMENT is the value that will replace the region.
+It should be a string, or an unary function that string or nil.
+
+Argument END is the end position of the region to be replaced.
+Argument BEG is the beginning position of the region to be replaced."
+  (when-let ((overlay (make-overlay beg end))
+             (rep (if (functionp replacement)
+                      (funcall replacement)
+                    replacement)))
+    (when (unwind-protect
+              (progn (overlay-put overlay 'face 'error)
+                     (overlay-put overlay 'after-string
+                                  (concat
+                                   "\s"
+                                   (propertize rep
+                                               'face 'success)))
+                     (yes-or-no-p "Replace region?"))
+            (delete-overlay overlay))
+      (when (fboundp 'replace-region-contents)
+        (replace-region-contents beg end (lambda () rep)))
+      rep)))
+
 ;;;###autoload
 (defun km-edit-recode-buffer-or-region (coding-system)
   "Encode and decode active region or whole buffer content to CODING-SYSTEM."
@@ -324,14 +349,20 @@ selected one."
       (message "Copied:\n%s" rep)
       rep)))
 
+
 (defun km-edit-elisp-to-doc-str (str)
   "Escape open parentheses and unescaped single and double quotes in STR."
-  (let ((normalized (prin1-to-string str)))
-    (replace-regexp-in-string
-     "\\(^[(]\\|[']\\)"
-     (lambda (s)
-       (concat "\\\\\=" s))
-     (substring-no-properties normalized 1 (1- (length normalized))))))
+  (with-temp-buffer
+    (insert
+     (let (print-level print-length)
+       (prin1-to-string str)))
+    (while (re-search-backward
+            "\\(^[(']\\|\\(\\([']\\)\\(\\(?:\\sw\\|\\s_\\|\\\\.\\)+\\)\\([\s)]\\)\\)\\)"
+            nil t 1)
+      (unless (looking-back "=" 0)
+        (insert "\\\\\=")))
+    (buffer-substring-no-properties (1+ (point-min))
+                                    (1- (point-max)))))
 
 ;;;###autoload
 (defun km-edit-copy-as-elisp-doc-str (beg end)
@@ -363,6 +394,46 @@ selected one."
                                        (1-
                                         end))))))
     (replace-region-contents beg end (lambda () rep))))
+
+
+;;;###autoload
+(defun km-edit-xr-to-rx-at-point ()
+  "Convert a regular expression at point from XR to RX format.
+Requires xr lib."
+  (interactive)
+  (require 'xr)
+  (let* ((pos (point))
+         (stx (syntax-ppss pos)))
+    (let ((start
+           (cond ((and (nth 3 stx)
+                       (nth 8 stx))
+                  (nth 8 stx))
+                 ((progn (setq stx (syntax-ppss (1+ pos)))
+                         (when (nth 3 stx)
+                           (nth 8 stx)))
+                  (nth 8 stx))
+                 ((progn
+                    (setq stx (syntax-ppss (1- pos)))
+                    (when (nth 3 stx)
+                      (nth 8 stx)))
+                  (nth 8 stx))))
+          (end)
+          (regex)
+          (rep))
+      (when start (save-excursion
+                    (goto-char start)
+                    (forward-sexp 1)
+                    (setq end (point))))
+      (setq regex (buffer-substring-no-properties start end))
+      (when regex
+        (setq rep (with-temp-buffer
+                    (let ((indent-tabs-mode nil))
+                      (when (fboundp 'xr--rx-to-string)
+                        (xr--rx-to-string regex)))
+                    (concat "(rx " (replace-regexp-in-string "[\t]" "\s"
+                                                             (buffer-string))
+                            ")")))
+        (km-edit-confirm-and-replace-region start end rep)))))
 
 
 ;;;###autoload
