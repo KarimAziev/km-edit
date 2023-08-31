@@ -121,10 +121,12 @@ Argument BEG is the beginning position of the region to be replaced."
 (defun km-edit-smart-beginning-of-line ()
   "Move point to first non-whitespace character or beginning-of-line."
   (interactive "^")
-  (let ((oldpos (point)))
-    (back-to-indentation)
-    (and (= oldpos (point))
-         (beginning-of-line))))
+  (if (minibufferp)
+      (beginning-of-line)
+    (let ((oldpos (point)))
+      (back-to-indentation)
+      (and (= oldpos (point))
+           (beginning-of-line)))))
 
 (defvar-local km-edit--quote-or-unquote-last-rep nil)
 
