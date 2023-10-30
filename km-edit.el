@@ -493,6 +493,44 @@ a b => \"a\" \"b\"."
         (when (fboundp 'replace-region-contents)
           (replace-region-contents start end (lambda () replacement)))))))
 
+;;;###autoload
+(defun km-edit-query-replace-regex ()
+  "Replace a symbol at point using `kill-ring' defaults."
+  (interactive)
+  (let* ((from-string (read-string "Replace: "
+                                   (or
+                                    (km-edit-get-region)
+                                    (thing-at-point 'symbol))))
+         (chars (seq-remove
+                 (lambda (c)
+                   (string-match-p "[a-z0-9]" c))
+                 (split-string
+                  from-string
+                  ""
+                  t)))
+         (replacements (delete-dups
+                        (seq-filter
+                         (lambda (str)
+                           (and
+                            (or (not chars)
+                                (seq-find (lambda (s)
+                                            (member s chars))
+                                          (split-string str "" t)))
+                            (not (string= str from-string))
+                            (string-match-p
+                             "[a-z]" str)
+                            (not (string-match-p
+                                  "[\s\t\n\r\f){(}\"']"
+                                  str))))
+                         kill-ring)))
+         (to-string (completing-read (format "Replace %s with: " from-string)
+                                     replacements
+                                     nil nil)))
+    (query-replace from-string to-string
+                   nil
+                   (point-min)
+                   (point-max))))
+
 
 (provide 'km-edit)
 ;;; km-edit.el ends here
