@@ -355,16 +355,22 @@ selected one."
 (defun km-edit-elisp-to-doc-str (str)
   "Escape open parentheses and unescaped single and double quotes in STR."
   (with-temp-buffer
-    (insert
-     (let (print-level print-length)
-       (prin1-to-string str)))
+    (insert (substring-no-properties
+             (let (print-length print-level print-circle)
+               (prin1-to-string str))
+             1
+             (length str)))
     (while (re-search-backward
             "\\(^[(']\\|\\(\\([']\\)\\(\\(?:\\sw\\|\\s_\\|\\\\.\\)+\\)\\([\s)]\\)\\)\\)"
             nil t 1)
-      (unless (looking-back "=" 0)
-        (insert "\\\\\=")))
-    (buffer-substring-no-properties (1+ (point-min))
-                                    (1- (point-max)))))
+      (if (looking-back "=" 0)
+          (forward-char -1)
+        (insert "=")
+        (forward-char -1))
+      (pcase (skip-chars-backward "\\\\")
+        (0 (insert "\\\\"))
+        (-1 (insert "\\"))))
+    (buffer-string)))
 
 ;;;###autoload
 (defun km-edit-copy-as-elisp-doc-str (beg end)
