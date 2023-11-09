@@ -340,7 +340,14 @@ selected one."
 
 ;;;###autoload
 (defun km-edit-copy-org-as-elisp-doc (beg end)
-  "Copy region between BEG and END and escape open parentheses and quotes."
+  "Copy and convert Org text to Elisp docstring.
+
+Argument BEG is the beginning position of the region to copy.
+
+Argument END is the ending position of the region to copy.
+
+Argument STR is the string to convert from `org-mode' format to an Emacs Lisp
+documentation string."
   (interactive "r")
   (when (and (region-active-p)
              (use-region-p))
@@ -374,7 +381,13 @@ selected one."
 
 ;;;###autoload
 (defun km-edit-copy-as-elisp-doc-str (beg end)
-  "Copy region between BEG and END and escape open parentheses and quotes."
+  "Copy region as Elisp doc string.
+
+Argument BEG is the position of the beginning of the region.
+
+Argument END is the position of the end of the region.
+
+Argument STR is a string to be escaped for use in documentation strings."
   (interactive "r")
   (when (and (region-active-p)
              (use-region-p))
