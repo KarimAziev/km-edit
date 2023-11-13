@@ -544,6 +544,32 @@ a b => \"a\" \"b\"."
                    (point-min)
                    (point-max))))
 
+(defun km-edit-remove-spaces-between-empty-lines ()
+  "Remove extra spaces between empty lines."
+  (save-excursion
+    (goto-char (point-min))
+    (while (re-search-forward "\n\\([\s]+\\)\n" nil t 1)
+      (replace-match "" nil nil nil 1))))
+
+;;;###autoload
+(define-minor-mode km-edit-whitespace-cleanup-mode
+  "Activate to clean whitespace on save.
+
+Activate `km-edit-whitespace-cleanup-mode' to automatically remove extra spaces
+between empty lines before saving a buffer.
+
+When enabled, this mode ensures that any sequence of spaces on lines by
+themselves are deleted upon saving, maintaining a cleaner file structure. Toggle
+off this mode to disable this automatic cleanup behavior."
+  :lighter " kme-cln"
+  :global nil
+  (if km-edit-whitespace-cleanup-mode
+      (add-hook 'before-save-hook #'km-edit-remove-spaces-between-empty-lines
+                nil 'local)
+    (remove-hook 'before-save-hook #'km-edit-remove-spaces-between-empty-lines
+                 'local)))
+
+
 
 (provide 'km-edit)
 ;;; km-edit.el ends here
