@@ -416,6 +416,7 @@ Argument STR is a string to be escaped for use in documentation strings."
                                         end))))))
     (replace-region-contents beg end (lambda () rep))))
 
+(declare-function xr-pp "xr")
 
 ;;;###autoload
 (defun km-edit-xr-to-rx-at-point ()
@@ -448,14 +449,14 @@ Requires xr lib."
       (setq regex (buffer-substring-no-properties start end))
       (when regex
         (setq rep (with-temp-buffer
-                    (let ((indent-tabs-mode nil))
-                      (when (fboundp 'xr--rx-to-string)
-                        (xr--rx-to-string regex)))
-                    (concat "(rx " (replace-regexp-in-string "[\t]" "\s"
-                                                             (buffer-string))
-                            ")")))
+                    (let ((indent-tabs-mode nil)
+                          (result))
+                      (setq result (progn (xr-pp regex)
+                                          (buffer-string)))
+                      (unless (string-empty-p result)
+                        (concat "(rx " result
+                                ")")))))
         (km-edit-confirm-and-replace-region start end rep)))))
-
 
 ;;;###autoload
 (defun km-edit-split-string ()
