@@ -362,11 +362,11 @@ documentation string."
 (defun km-edit-elisp-to-doc-str (str)
   "Escape open parentheses and unescaped single and double quotes in STR."
   (with-temp-buffer
-    (insert (substring-no-properties
-             (let (print-length print-level print-circle)
-               (prin1-to-string str))
-             1
-             (length str)))
+    (insert (replace-regexp-in-string
+             "^\"\\|\"$" ""
+             (let (print-length print-level
+                                print-circle)
+               (prin1-to-string str))))
     (while (re-search-backward
             "\\(^[(']\\|\\(\\([']\\)\\(\\(?:\\sw\\|\\s_\\|\\\\.\\)+\\)\\([\s)]\\)\\)\\)"
             nil t 1)
