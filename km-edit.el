@@ -33,6 +33,11 @@
 (require 'subr-x)
 
 ;;;###autoload
+
+(declare-function xr-pp-rx-to-str "xr")
+(declare-function xr-pp "xr")
+(declare-function xr "xr")
+
 (defun km-edit-indent-buffer-or-region ()
   "Indent active region or the entire buffer."
   (interactive)
@@ -41,6 +46,7 @@
                      (region-end))
     (indent-region (point-min)
                    (point-max))))
+
 
 ;;;###autoload
 (defun km-edit-yank-pop-forwards (arg)
@@ -416,7 +422,7 @@ Argument STR is a string to be escaped for use in documentation strings."
                                         end))))))
     (replace-region-contents beg end (lambda () rep))))
 
-(declare-function xr-pp "xr")
+
 
 ;;;###autoload
 (defun km-edit-xr-to-rx-at-point ()
@@ -440,23 +446,20 @@ Requires xr lib."
                       (nth 8 stx)))
                   (nth 8 stx))))
           (end)
-          (regex)
-          (rep))
+          (regex))
       (when start (save-excursion
                     (goto-char start)
+                    (setq regex (sexp-at-point))
                     (forward-sexp 1)
                     (setq end (point))))
-      (setq regex (buffer-substring-no-properties start end))
       (when regex
-        (setq rep (with-temp-buffer
-                    (let ((indent-tabs-mode nil)
-                          (result))
-                      (setq result (progn (xr-pp regex)
-                                          (buffer-string)))
-                      (unless (string-empty-p result)
-                        (concat "(rx " result
-                                ")")))))
-        (km-edit-confirm-and-replace-region start end rep)))))
+        (replace-region-contents start end
+                                 (lambda ()
+                                   (concat "(rx "
+                                           (xr-pp-rx-to-str (xr
+                                                             regex
+                                                             nil))
+                                           ")")))))))
 
 ;;;###autoload
 (defun km-edit-split-string ()
@@ -570,6 +573,24 @@ off this mode to disable this automatic cleanup behavior."
     (remove-hook 'before-save-hook #'km-edit-remove-spaces-between-empty-lines
                  'local)))
 
+;;;###autoload
+(defun km-edit-markdown-quotes-to-org-quotes (replacement)
+  "Convert Markdown quotes to Org-mode quotes in text.
+
+Argument REPLACEMENT is the string to replace matched quotes with. It
+defaults to prompting the user with a completion list."
+  (interactive (list
+                (completing-read "Replace with: " '("=" "~"))))
+  (pcase-let ((`(,beg . ,end)
+               (if (region-active-p)
+                   (car (region-bounds))
+                 (cons (point-min)
+                       (point-max)))))
+    (save-excursion
+      (goto-char beg)
+      (while (re-search-forward  "\\([`]\\)[a-z0-9._-]+\\(['`]\\)" end t 1)
+        (replace-match replacement nil nil nil 1)
+        (replace-match replacement nil nil nil 2)))))
 
 
 (provide 'km-edit)
