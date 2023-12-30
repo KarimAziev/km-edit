@@ -6,7 +6,7 @@
 ;; URL: https://github.com/KarimAziev/km-edit
 ;; Version: 0.1.0
 ;; Keywords: lisp
-;; Package-Requires: ((emacs "26.1"))
+;; Package-Requires: ((emacs "28.1"))
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; This file is NOT part of GNU Emacs.
@@ -32,12 +32,11 @@
 
 (require 'subr-x)
 
-;;;###autoload
-
 (declare-function xr-pp-rx-to-str "xr")
 (declare-function xr-pp "xr")
 (declare-function xr "xr")
 
+;;;###autoload
 (defun km-edit-indent-buffer-or-region ()
   "Indent active region or the entire buffer."
   (interactive)
@@ -230,13 +229,12 @@ In other cases insert string."
   (when-let ((bounds (or (and (region-active-p)
                               (car (region-bounds)))
                          (bounds-of-thing-at-point 'sexp))))
-    (if (called-interactively-p 'any)
-        (kill-new (buffer-substring-no-properties
-                   (car bounds)
-                   (cdr bounds)))
-      (buffer-substring-no-properties
-       (car bounds)
-       (cdr bounds)))))
+    (kill-new (buffer-substring-no-properties
+               (car bounds)
+               (cdr bounds)))
+    (buffer-substring-no-properties
+     (car bounds)
+     (cdr bounds))))
 
 (defun km-edit-get-region ()
   "Return current active region as string or nil."
@@ -423,7 +421,33 @@ Argument STR is a string to be escaped for use in documentation strings."
     (replace-region-contents beg end (lambda () rep))))
 
 
-
+(defun km-edit--get-xr-to-rx-sexp ()
+  "Convert regex string to `rx' sexp at point."
+  (let* ((pos (point))
+         (stx (syntax-ppss pos)))
+    (let ((start
+           (cond ((and (nth 3 stx)
+                       (nth 8 stx))
+                  (nth 8 stx))
+                 ((progn (setq stx (syntax-ppss (1+ pos)))
+                         (when (nth 3 stx)
+                           (nth 8 stx)))
+                  (nth 8 stx))
+                 ((progn
+                    (setq stx (syntax-ppss (1- pos)))
+                    (when (nth 3 stx)
+                      (nth 8 stx)))
+                  (nth 8 stx))))
+          (regex))
+      (when start (save-excursion
+                    (goto-char start)
+                    (setq regex (sexp-at-point))))
+      (when regex
+        (concat "(rx "
+                (xr-pp-rx-to-str (xr
+                                  regex
+                                  nil))
+                ")")))))
 ;;;###autoload
 (defun km-edit-xr-to-rx-at-point ()
   "Convert a regular expression at point from XR to RX format.
@@ -460,6 +484,16 @@ Requires xr lib."
                                                              regex
                                                              nil))
                                            ")")))))))
+
+;;;###autoload
+(defun km-edit-copy-regex-at-point-as-rx ()
+  "Copy regex at point to kill ring as `rx' syntax."
+  (interactive)
+  (require 'xr)
+  (when-let ((regex (km-edit--get-xr-to-rx-sexp)))
+    (kill-new regex)
+    (message "copied %s" regex)
+    regex))
 
 ;;;###autoload
 (defun km-edit-split-string ()
@@ -592,6 +626,98 @@ defaults to prompting the user with a completion list."
         (replace-match replacement nil nil nil 1)
         (replace-match replacement nil nil nil 2)))))
 
+;;;###autoload (autoload 'km-edit-menu "km-edit" nil t)
+(transient-define-prefix km-edit-menu ()
+  "Select and invoke an EasyPG command from a list of available commands."
+  :transient-suffix     nil
+  :transient-non-suffix nil
+  [("r" "Replace xr to rx format"
+    km-edit-copy-regex-at-point-as-rx)
+   ("p" "Convert a regular expression at point from xr to rx format"
+    km-edit-xr-to-rx-at-point)
+   ("s" "Copy region as Elisp doc string" km-edit-copy-as-elisp-doc-str)
+   ("q" "Replace a symbol at point using ‘kill-ring’ defaults"
+    km-edit-query-replace-regex)
+   ("d" "Copy and convert Org text to Elisp docstring"
+    km-edit-copy-org-as-elisp-doc)
+   ("o" "Convert Markdown quotes to Org-mode quotes in text"
+    km-edit-markdown-quotes-to-org-quotes)
+   ("u" "Replace region between beg and end to non string" km-edit-unqote-region)
+   ("m" "Activate to clean whitespace on save" km-edit-whitespace-cleanup-mode)
+   ("e" "Split active region to strings" km-edit-split-string)
+   ("k"
+    "Try all possible character encodings to re-decode region between beg and end"
+    km-edit-recode-region)
+   ("b"
+    "Encode and decode active region or whole buffer content to coding-system"
+    km-edit-recode-buffer-or-region)
+   ("a" "Copy region or sexp at point" km-edit-copy-sexp-or-region-at-point)
+   ("n"
+    "Return a string with the printed representation of region without new lines"
+    km-edit-copy-prin1-to-string-no-newlines)])
+
+;;;###autoload (autoload 'km-edit-multi-cursors-menu "km-edit" nil t)
+(transient-define-prefix km-edit-multi-cursors-menu ()
+  "Command dispatcher for `multiple-cursors'."
+  :transient-suffix #'transient--do-call
+  :transient-non-suffix #'transient--do-exit
+  [:if (lambda ()
+         (require 'multiple-cursors nil t))
+   ("l" "Add one cursor to each line of the active region"
+    mc/edit-lines
+    :transient nil
+    :inapt-if-not use-region-p)
+   ("a"
+    "Find and mark all the parts of the buffer matching the currently active region"
+    mc/mark-all-like-this
+    :transient nil)
+   ("n"
+    mc/mark-next-like-this
+    :description (lambda ()
+                   (concat "Add cursor to " (if (region-active-p)
+                                                " region lines"
+                                              " next line"))))
+   ("N"
+    "Skip next line"
+    mc/skip-to-next-like-this)
+   ("M-n"
+    "Deselect next part of the buffer matching the currently active region"
+    mc/unmark-next-like-this)
+   ("p"
+    "Mark previous part of the buffer matching the currently active region"
+    mc/mark-previous-like-this)
+   ("S"
+    "Skip the current one and select the prev part of the buffer"
+    mc/skip-to-previous-like-this)
+   ("M-p"
+    "Deselect prev part of the buffer matching the currently active region"
+    mc/unmark-previous-like-this)
+   ("s"
+    "Find and mark all the parts in the region matching the given regexp"
+    mc/mark-all-in-region-regexp
+    :transient nil)]
+  [:if (lambda ()
+         (require 'multiple-cursors nil t))
+   :description "Insert"
+   [("0" "Insert increasing numbers from 0" mc/insert-numbers
+     :transient nil)
+    ("A" "Insert increasing letters for each cursor"
+     mc/insert-letters
+     :transient nil)]])
+
+;;;###autoload (autoload 'km-edit-string-inflection-menu "km-edit" nil t)
+(transient-define-prefix km-edit-string-inflection-menu ()
+  :transient-suffix #'transient--do-call
+  [:if (lambda ()
+         (require 'string-inflection nil t))
+   ("."
+    "foo_bar => FOO_BAR => FooBar => fooBar => foo-bar => Foo_Bar => foo_bar"
+    string-inflection-all-cycle)
+   ("t" "foo_bar <=> FooBar" string-inflection-toggle)
+   ("-" "foo-bar" string-inflection-kebab-case)
+   ("l" "fooBar" string-inflection-lower-camelcase)
+   ("_" "foo_bar" string-inflection-underscore)
+   ("u" "FOO_BAR" string-inflection-upcase)])
 
 (provide 'km-edit)
 ;;; km-edit.el ends here
