@@ -226,12 +226,10 @@ In other cases insert string."
 (defun km-edit-copy-sexp-or-region-at-point ()
   "Copy region or sexp at point."
   (interactive)
-  (when-let ((bounds (or (and (region-active-p)
-                              (car (region-bounds)))
-                         (bounds-of-thing-at-point 'sexp))))
-    (kill-new (buffer-substring-no-properties
-               (car bounds)
-               (cdr bounds)))
+  (when-let ((bounds (bounds-of-thing-at-point 'sexp)))
+    (km-edit--kill-new (buffer-substring-no-properties
+                        (car bounds)
+                        (cdr bounds)))
     (buffer-substring-no-properties
      (car bounds)
      (cdr bounds))))
@@ -240,18 +238,29 @@ In other cases insert string."
   "Return current active region as string or nil."
   (when (and (region-active-p)
              (use-region-p))
-    (string-trim (buffer-substring-no-properties
-                  (region-beginning)
-                  (region-end)))))
+    (buffer-substring-no-properties
+     (region-beginning)
+     (region-end))))
+
+(defun km-edit--kill-new (str)
+  "Copy STR to the kill ring and display a message.
+
+Argument STR is the string to be added to the kill ring."
+  (kill-new str)
+  (message (concat
+            (propertize "Copied:" 'face 'font-lock-doc-markup-face)
+            "\n\n"
+            str))
+  str)
 
 ;;;###autoload
 (defun km-edit-copy-prin1-to-string-at-point ()
   "Return a string with the printed representation of active region or sexp."
   (interactive)
-  (when-let ((content (km-edit-copy-sexp-or-region-at-point)))
-    (if (called-interactively-p 'any)
-        (kill-new (prin1-to-string content))
-      (prin1-to-string content))))
+  (pcase-let* ((`(,beg . ,end)
+                (bounds-of-thing-at-point 'sexp))
+               (content (and beg end (buffer-substring-no-properties beg end))))
+    (km-edit--kill-new (prin1-to-string content))))
 
 ;;;###autoload
 (defun km-edit-copy-prin1-to-string-no-newlines ()
@@ -261,12 +270,13 @@ In other cases insert string."
   (when-let ((content (string-join
                        (split-string
                         (km-edit-copy-sexp-or-region-at-point)
-                        (if (yes-or-no-p "Remove multi spaces?")
+                        (if
+                            (yes-or-no-p "Remove multi spaces?")
                             nil "\n")
                         t)
                        "\s")))
     (if (called-interactively-p 'any)
-        (kill-new (prin1-to-string content))
+        (km-edit--kill-new (prin1-to-string content))
       (prin1-to-string content))))
 
 ;;;###autoload
@@ -342,6 +352,43 @@ selected one."
         (replace-match (upcase value))))
     (buffer-string)))
 
+(defun km-edit-elisp-to-org-doc (str)
+  "Convert description STR from elisp documentation string to `org-mode'."
+  (with-temp-buffer
+    (insert str)
+    (goto-char (point-min))
+    (while (re-search-forward "[`']\\([^`']+\\)[`']" nil t 1)
+      (let ((value (match-string-no-properties 1))
+            (beg (match-beginning 0))
+            (end (match-end 0)))
+        (delete-region beg end)
+        (insert (concat "=" value "="))))
+    (buffer-string)))
+
+;;;###autoload
+(defun km-edit-copy-elisp-as-org (beg end)
+  "Copy and convert Elisp docstring as org.
+
+Argument BEG is the beginning position of the region to copy.
+
+Argument END is the ending position of the region to copy.
+
+Argument STR is the string to convert from `org-mode' format to an Emacs Lisp
+documentation string."
+  (interactive "r")
+  (when (and (region-active-p)
+             (use-region-p))
+    (let* ((text (mapconcat
+                  (apply-partially #'replace-regexp-in-string "^\\([\s;]+\\)")
+                  (split-string (buffer-substring-no-properties beg end) "\n")
+                  "\n"))
+           (rep
+            (km-edit-elisp-to-org-doc
+             text)))
+      (km-edit--kill-new rep)
+      (message "Copied:\n%s" rep)
+      rep)))
+
 ;;;###autoload
 (defun km-edit-copy-org-as-elisp-doc (beg end)
   "Copy and convert Org text to Elisp docstring.
@@ -358,12 +405,13 @@ documentation string."
     (let ((rep
            (km-edit-org-elisp-to-doc-str
             (buffer-substring-no-properties beg end))))
-      (kill-new rep)
+      (km-edit--kill-new rep)
       (message "Copied:\n%s" rep)
       rep)))
 
 
-(defun km-edit-elisp-to-doc-str (str)
+
+(defun km-edit--sexp-to-doc-example (str)
   "Escape open parentheses and unescaped single and double quotes in STR."
   (with-temp-buffer
     (insert (replace-regexp-in-string
@@ -383,9 +431,10 @@ documentation string."
         (-1 (insert "\\"))))
     (buffer-string)))
 
+
 ;;;###autoload
-(defun km-edit-copy-as-elisp-doc-str (beg end)
-  "Copy region as Elisp doc string.
+(defun km-edit-copy-sexp-as-elisp-doc-example (beg end)
+  "Copy region as Elisp documentation string.
 
 Argument BEG is the position of the beginning of the region.
 
@@ -396,11 +445,11 @@ Argument STR is a string to be escaped for use in documentation strings."
   (when (and (region-active-p)
              (use-region-p))
     (let ((rep
-           (km-edit-elisp-to-doc-str
+           (km-edit--sexp-to-doc-example
             (buffer-substring-no-properties beg end))))
-      (kill-new rep)
-      (message "Copied:\n%s" rep)
-      rep)))
+      (km-edit--kill-new rep))))
+
+
 
 ;;;###autoload
 (defun km-edit-unqote-region (beg end)
@@ -429,12 +478,13 @@ Argument STR is a string to be escaped for use in documentation strings."
            (cond ((and (nth 3 stx)
                        (nth 8 stx))
                   (nth 8 stx))
-                 ((progn (setq stx (syntax-ppss (1+ pos)))
+                 ((progn (setq stx (ignore-errors (syntax-ppss (1+ pos))))
                          (when (nth 3 stx)
                            (nth 8 stx)))
                   (nth 8 stx))
                  ((progn
-                    (setq stx (syntax-ppss (1- pos)))
+                    (setq stx (ignore-errors
+                                (syntax-ppss (1- pos))))
                     (when (nth 3 stx)
                       (nth 8 stx)))
                   (nth 8 stx))))
@@ -491,9 +541,43 @@ Requires xr lib."
   (interactive)
   (require 'xr)
   (when-let ((regex (km-edit--get-xr-to-rx-sexp)))
-    (kill-new regex)
+    (km-edit--kill-new regex)
     (message "copied %s" regex)
     regex))
+
+
+(defun km-edit--split-string-replacement ()
+  "Split and reformat a string from the buffer or region."
+  (pcase-let*
+      ((`(,start . ,end)
+        (if (and
+             (region-active-p)
+             (use-region-p))
+            (cons (region-beginning)
+                  (region-end))
+          (save-excursion
+            (when-let ((str-start (nth 8 (syntax-ppss (point)))))
+              (goto-char str-start)
+              (when (looking-at "\"")
+                (cons (point)
+                      (save-excursion
+                        (forward-sexp 1)
+                        (point))))))))
+       (reg (and start end
+                 (buffer-substring-no-properties
+                  start end))))
+    (when reg
+      (list start end
+            (mapconcat #'prin1-to-string
+                       (split-string
+                        (if (string-match-p "^\""
+                                            reg)
+                            (condition-case  nil
+                                (car-safe (read-from-string
+                                           reg))
+                              (error reg))
+                          reg))
+                       "\s")))))
 
 ;;;###autoload
 (defun km-edit-split-string ()
@@ -504,45 +588,21 @@ For example, inside string:
 
 a b => \"a\" \"b\"."
   (interactive)
-  (pcase-let
-      ((`(,start . ,end)
-        (if (and
-             (region-active-p)
-             (use-region-p))
-            (cons (region-beginning)
-                  (region-end))
-          (when-let ((str-start (nth 8 (syntax-ppss (point)))))
-            (goto-char str-start))
-          (when (looking-at "\"")
-            (cons (point)
-                  (save-excursion
-                    (forward-sexp 1)
-                    (point)))))))
-    (when-let* ((reg
-                 (when (and start end)
-                   (buffer-substring-no-properties start end)))
-                (replacement (mapconcat #'prin1-to-string
-                                        (split-string
-                                         (if (string-match-p "^\""
-                                                             reg)
-                                             (condition-case  nil
-                                                 (car-safe (read-from-string
-                                                            reg))
-                                               (error reg))
-                                           reg))
-                                        "\s"))
-                (overlay (make-overlay start end)))
-      (when (unwind-protect
-                (progn (overlay-put overlay 'face 'error)
-                       (overlay-put overlay 'after-string
-                                    (concat
-                                     "\s"
-                                     (propertize replacement
-                                                 'face 'success)))
-                       (yes-or-no-p "Replace region?"))
-              (delete-overlay overlay))
-        (when (fboundp 'replace-region-contents)
-          (replace-region-contents start end (lambda () replacement)))))))
+  (pcase-let ((`(,start ,end ,replacement)
+               (km-edit--split-string-replacement)))
+    (when replacement
+      (when-let* ((overlay (make-overlay start end)))
+        (when (unwind-protect
+                  (progn (overlay-put overlay 'face 'error)
+                         (overlay-put overlay 'after-string
+                                      (concat
+                                       "\s"
+                                       (propertize replacement
+                                                   'face 'success)))
+                         (yes-or-no-p "Replace region?"))
+                (delete-overlay overlay))
+          (when (fboundp 'replace-region-contents)
+            (replace-region-contents start end (lambda () replacement))))))))
 
 ;;;###autoload
 (defun km-edit-query-replace-regex ()
@@ -622,39 +682,106 @@ defaults to prompting the user with a completion list."
                        (point-max)))))
     (save-excursion
       (goto-char beg)
-      (while (re-search-forward  "\\([`]\\)[a-z0-9._-]+\\(['`]\\)" end t 1)
+      (while (re-search-forward "\\([`]\\)[a-z0-9._-]+\\(['`]\\)" end t 1)
         (replace-match replacement nil nil nil 1)
         (replace-match replacement nil nil nil 2)))))
 
-;;;###autoload (autoload 'km-edit-menu "km-edit" nil t)
-(transient-define-prefix km-edit-menu ()
-  "Select and invoke an EasyPG command from a list of available commands."
-  :transient-suffix     nil
-  :transient-non-suffix nil
-  [("r" "Replace xr to rx format"
-    km-edit-copy-regex-at-point-as-rx)
-   ("p" "Convert a regular expression at point from xr to rx format"
-    km-edit-xr-to-rx-at-point)
-   ("s" "Copy region as Elisp doc string" km-edit-copy-as-elisp-doc-str)
-   ("q" "Replace a symbol at point using ‘kill-ring’ defaults"
-    km-edit-query-replace-regex)
-   ("d" "Copy and convert Org text to Elisp docstring"
-    km-edit-copy-org-as-elisp-doc)
-   ("o" "Convert Markdown quotes to Org-mode quotes in text"
-    km-edit-markdown-quotes-to-org-quotes)
-   ("u" "Replace region between beg and end to non string" km-edit-unqote-region)
-   ("m" "Activate to clean whitespace on save" km-edit-whitespace-cleanup-mode)
-   ("e" "Split active region to strings" km-edit-split-string)
-   ("k"
-    "Try all possible character encodings to re-decode region between beg and end"
+(defun km-edit--make-toggled-description (mode &optional description align)
+  "Concat DESCRIPTION for MODE with colorized suffixes ON-LABEL and OFF-LABEL."
+  (concat
+   (propertize
+    (or
+     description
+     (when-let ((doc (replace-regexp-in-string
+                      "-" " " (capitalize (symbol-name
+                                           mode)))))
+       (replace-regexp-in-string "\\.$" ""
+                                 (car
+                                  (split-string doc "\n" nil)))))
+    'face
+    (if
+        (and (boundp mode)
+             (symbol-value mode))
+        'success nil))
+   (propertize " " 'display
+               (list 'space :align-to (or align 50)))
+   (if (and (boundp mode)
+            (symbol-value mode))
+       "[X]" "[ ]")))
+
+(transient-define-prefix km-edit-recode-menu ()
+  "Display recoding options for text selection."
+  [("k"
+    "Recode (show all variants)"
     km-edit-recode-region)
    ("b"
-    "Encode and decode active region or whole buffer content to coding-system"
-    km-edit-recode-buffer-or-region)
-   ("a" "Copy region or sexp at point" km-edit-copy-sexp-or-region-at-point)
-   ("n"
-    "Return a string with the printed representation of region without new lines"
-    km-edit-copy-prin1-to-string-no-newlines)])
+    "Encode and decode"
+    km-edit-recode-buffer-or-region)])
+
+;;;###autoload (autoload 'km-edit-menu "km-edit" nil t)
+(transient-define-prefix km-edit-menu ()
+  "A transient menu for various editing operations."
+  :transient-suffix     nil
+  :transient-non-suffix nil
+  [["Copy"
+    ("s" "elisp => doc string" km-edit-copy-sexp-as-elisp-doc-example
+     :inapt-if-not km-edit-get-region)
+    (";" "elisp => org" km-edit-copy-elisp-as-org :inapt-if-not
+     km-edit-get-region)
+    ("d" "org => elisp" km-edit-copy-org-as-elisp-doc :inapt-if-not
+     km-edit-get-region)
+    ("n" "as prin1 to string" km-edit-copy-prin1-to-string-at-point
+     :inapt-if-not (lambda ()
+                     (bounds-of-thing-at-point 'sexp)))
+    ("N" "as prin1 to string one line"
+     km-edit-copy-prin1-to-string-no-newlines
+     :inapt-if-not (lambda ()
+                     (bounds-of-thing-at-point 'sexp)))
+    ("a" "sexp at point"
+     km-edit-copy-sexp-or-region-at-point
+     :inapt-if-not (lambda ()
+                     (bounds-of-thing-at-point 'sexp)))]
+   ["Replace"
+    ("." "query replace" km-edit-query-replace-regex)
+    ("o" "markdown => org" km-edit-markdown-quotes-to-org-quotes
+     :inapt-if-not (lambda ()
+                     (save-excursion
+                       (pcase-let ((`(,beg . ,end)
+                                    (if (region-active-p)
+                                        (car (region-bounds))
+                                      (cons (point-min)
+                                            (point-max)))))
+                         (save-excursion
+                           (goto-char beg)
+                           (re-search-forward "\\([`]\\)[a-z0-9._-]+\\(['`]\\)"
+                                              end t 1))))))
+    ""
+    ("u" "unquote region" km-edit-unqote-region
+     :inapt-if-not (lambda ()
+                     (when-let ((reg (km-edit-get-region)))
+                       (and (string-prefix-p "\"" reg)
+                            (string-suffix-p "\"" reg)))))
+    ("e" km-edit-split-string
+     :inapt-if-not km-edit--split-string-replacement
+     :description
+     (lambda ()
+       (or (car (last (km-edit--split-string-replacement)))
+           "region to strings")))
+    "Regex"
+    ("r" "Copy xr => rx" km-edit-copy-regex-at-point-as-rx
+     :inapt-if-not (lambda ()
+                     (save-excursion
+                       (km-edit--get-xr-to-rx-sexp))))
+    ("p" "Convert xr => rx" km-edit-xr-to-rx-at-point
+     :inapt-if-not (lambda ()
+                     (save-excursion
+                       (km-edit--get-xr-to-rx-sexp))))]]
+  [[("m" km-edit-whitespace-cleanup-mode
+     :description (lambda ()
+                    (km-edit--make-toggled-description
+                     'km-edit-whitespace-cleanup-mode))
+     :transient t)
+    ("E" "Encode or decode" km-edit-recode-menu)]])
 
 ;;;###autoload (autoload 'km-edit-multi-cursors-menu "km-edit" nil t)
 (transient-define-prefix km-edit-multi-cursors-menu ()
