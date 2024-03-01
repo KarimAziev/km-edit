@@ -31,6 +31,7 @@
 ;;; Code:
 
 (require 'subr-x)
+(require 'transient)
 
 (declare-function xr-pp-rx-to-str "xr")
 (declare-function xr-pp "xr")
