@@ -172,6 +172,21 @@ Argument BEG is the beginning position of the region to be replaced."
                                (cdr bounds)
                                (lambda () item)))))
 
+(defun km-edit-infer-indentation-style ()
+  "Set `indent-tabs-mode' based on the predominant indentation style in the buffer.
+
+Usage example:
+
+\\=(add-hook \\='prog-mode-hook \\='km-edit-infer-indentation-style)."
+  (let ((space-count (how-many "^  " (point-min)
+                               (point-max)))
+        (tab-count (how-many "^\t" (point-min)
+                             (point-max))))
+    (if (> space-count tab-count)
+        (setq indent-tabs-mode nil))
+    (if (> tab-count space-count)
+        (setq indent-tabs-mode t))))
+
 (defcustom km-edit-dwim-kbd-forms '(define-key local-set-key
                                                global-set-key)
   "List of allowed parent symbols to insert keys wrapped in kbd call.
