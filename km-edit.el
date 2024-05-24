@@ -6,7 +6,7 @@
 ;; URL: https://github.com/KarimAziev/km-edit
 ;; Version: 0.1.0
 ;; Keywords: lisp
-;; Package-Requires: ((emacs "28.1"))
+;; Package-Requires: ((emacs "28.1") (transient "0.6.0"))
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; This file is NOT part of GNU Emacs.
@@ -36,6 +36,26 @@
 (declare-function xr-pp-rx-to-str "xr")
 (declare-function xr-pp "xr")
 (declare-function xr "xr")
+
+(declare-function iedit-find-current-occurrence-overlay "iedit-lib")
+(declare-function iedit-barf-if-buffering "iedit-lib")
+(declare-function iedit-apply-on-occurrences "iedit-lib")
+
+(defcustom km-edit-truncate-line-modes '(tabulated-list-mode
+                                         gh-repo-list-mode
+                                         igist-list-mode)
+  "List of modes where lines should be truncated instead of wrapped.
+
+A list of major modes where lines should be truncated instead of
+wrapped.
+
+Each element in the list should be a symbol representing a major
+mode where line truncation is preferred. When the current buffer's
+major mode matches one of the modes in this list, lines will be
+truncated, and `visual-line-mode' and `visual-fill-column-mode'
+will be disabled if they are active."
+  :group 'km-edit
+  :type '(repeat (symbol :tag "Major Mode")))
 
 ;;;###autoload
 (defun km-edit-indent-buffer-or-region ()
@@ -725,6 +745,7 @@ defaults to prompting the user with a completion list."
             (symbol-value mode))
        "[X]" "[ ]")))
 
+;;;###autoload (autoload 'km-edit-recode-menu "km-edit" nil t)
 (transient-define-prefix km-edit-recode-menu ()
   "Display recoding options for text selection."
   [("k"
@@ -861,6 +882,150 @@ defaults to prompting the user with a completion list."
    ("l" "fooBar" string-inflection-lower-camelcase)
    ("_" "foo_bar" string-inflection-underscore)
    ("u" "FOO_BAR" string-inflection-upcase)])
+
+(defun km-edit-maybe-disable-truncate-lines ()
+  "Disable `truncate-lines' if `visual-line-mode' is enabled."
+  (cond ((bound-and-true-p visual-line-mode)
+         (setq truncate-lines nil))))
+
+(defun km-edit-setup-visual-line-mode ()
+  "Set up line truncation or visual line mode based on the current major mode."
+  (cond ((derived-mode-p km-edit-truncate-line-modes)
+         (setq truncate-lines t)
+         (when (bound-and-true-p visual-line-mode)
+           (visual-line-mode -1))
+         (when (and (bound-and-true-p visual-fill-column-mode)
+                    (fboundp 'visual-fill-column-mode))
+           (visual-fill-column-mode -1)))
+        ((derived-mode-p 'comint-mode)
+         (setq truncate-lines nil))
+        (t
+         (visual-line-mode 1))))
+
+(defvar iedit-case-sensitive)
+(defvar iedit-mode-occurrence-keymap)
+
+;;;###autoload
+(defun km-edit-iedit-replace-occurrences (&optional to-string)
+  "Replace all occurrences of a string with another string interactively.
+
+Optional argument TO-STRING is the string to replace occurrences with."
+  (interactive "*")
+  (require 'iedit)
+  (iedit-barf-if-buffering)
+  (let* ((ov (iedit-find-current-occurrence-overlay))
+         (offset (- (point)
+                    (overlay-start ov)))
+         (from-string (buffer-substring-no-properties
+                       (overlay-start ov)
+                       (overlay-end ov)))
+         (default-rep (car kill-ring))
+         (to-string (if (not to-string)
+                        (read-string
+                         (format "Replace with: (default %s) "
+                                 default-rep)
+                         nil nil
+                         default-rep
+                         nil)
+                      to-string)))
+    (iedit-apply-on-occurrences
+     (lambda (beg end from-string to-string)
+       (goto-char beg)
+       (search-forward from-string end)
+       (replace-match to-string (not (and (not iedit-case-sensitive)
+                                          case-replace))))
+     from-string to-string)
+    (goto-char (+ (overlay-start ov) offset))))
+
+(defun km-edit--format-keymap (sym &optional full shadow prefix title with-menu
+                                   transl always-title mention-shadow buffer)
+  "Substitute keymap symbols with their values in a temporary buffer.
+
+Argument SYM is a keymap, a string naming a symbol, or a symbol whose value is a
+keymap.
+
+Optional argument FULL is a boolean; when non-nil, it includes inherited
+keymaps.
+
+Optional argument SHADOW is a boolean; when non-nil, it shows keys that are
+shadowed by higher-precedence maps.
+
+Optional argument PREFIX is a string or a vector of events to be used as a
+PREFIX for keys in the keymap.
+
+Optional argument TITLE is a string used as the title of the keymap description.
+
+Optional argument WITH-MENU is a boolean; when non-nil, it includes menu
+bindings.
+
+Optional argument TRANSL is a boolean; when non-nil, it translates keys to their
+ASCII equivalents.
+
+Optional argument ALWAYS-TITLE is a boolean; when non-nil, it forces the display
+of the TITLE even if it would normally be omitted.
+
+Optional argument MENTION-SHADOW is a boolean; when non-nil, it mentions when a
+binding is shadowed by another map.
+
+Optional argument BUFFER is the buffer in which the keymap is active; defaults
+to the current buffer."
+  (when-let ((value
+              (cond ((keymapp sym)
+                     sym)
+                    ((stringp sym)
+                     (ignore-errors (symbol-value (intern-soft sym))))
+                    ((symbolp sym)
+                     (symbol-value sym))))
+             (buff (or buffer (current-buffer))))
+    (with-temp-buffer
+      (funcall (with-no-warnings
+                 (if (fboundp 'help--describe-map-tree)
+                     #'help--describe-map-tree
+                   #'describe-map-tree))
+               value
+               (not full)
+               shadow
+               prefix
+               title
+               (not with-menu)
+               transl
+               always-title
+               mention-shadow
+               buff)
+      (buffer-string))))
+
+;;;###autoload
+(defun km-edit-iedit-show-keymap ()
+  "Display key bindings in `iedit-mode' using `lv-message'."
+  (interactive)
+  (require 'lv nil t)
+  (require 'iedit)
+  (when (and (bound-and-true-p iedit-mode)
+             (fboundp 'lv-delete-window))
+    (lv-delete-window)
+    (when-let ((msg
+                (string-join (seq-remove
+                              (lambda (str)
+                                (or (string-empty-p str)
+                                    (string-prefix-p "<remap" str)))
+                              (split-string (km-edit--format-keymap
+                                             iedit-mode-occurrence-keymap
+                                             t nil nil nil nil nil
+                                             nil nil
+                                             (current-buffer))
+                                            "\n" t))
+                             "\n")))
+      (when (fboundp 'lv-message)
+        (add-hook 'iedit-mode-end-hook #'km-edit-iedit-cleanup)
+        (lv-message msg)))))
+
+(defun km-edit-iedit-cleanup ()
+  "Remove the cleanup hook and delete the lv window if it exists."
+  (require 'lv nil t)
+  (remove-hook 'iedit-mode-end-hook #'km-edit-iedit-cleanup)
+  (when (fboundp 'lv-delete-window)
+    (lv-delete-window)))
+
 
 (provide 'km-edit)
 ;;; km-edit.el ends here
