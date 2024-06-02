@@ -283,18 +283,25 @@ In other cases insert string."
 
 Argument STR is the string to be added to the kill ring."
   (kill-new str)
-  (message (concat
-            (propertize "Copied:" 'face 'font-lock-doc-markup-face)
-            "\n\n"
-            str))
+  (message "Copied")
   str)
+
+(defun km-edit--has-region-or-sexp ()
+  "Check if a region is active or return bounds of the nearest s-expression."
+  (or (and (region-active-p)
+           (use-region-p))
+      (bounds-of-thing-at-point 'sexp)))
 
 ;;;###autoload
 (defun km-edit-copy-prin1-to-string-at-point ()
   "Return a string with the printed representation of active region or sexp."
   (interactive)
   (pcase-let* ((`(,beg . ,end)
-                (bounds-of-thing-at-point 'sexp))
+                (if (and (region-active-p)
+                         (use-region-p))
+                    (cons (region-beginning)
+                          (region-end))
+                  (bounds-of-thing-at-point 'sexp)))
                (content (and beg end (buffer-substring-no-properties beg end))))
     (km-edit--kill-new (prin1-to-string content))))
 
@@ -305,7 +312,7 @@ Argument STR is the string to be added to the kill ring."
   (require 'subr-x)
   (when-let ((content (string-join
                        (split-string
-                        (km-edit-copy-sexp-or-region-at-point)
+                        (km-edit-copy-prin1-to-string-at-point)
                         (if
                             (yes-or-no-p "Remove multi spaces?")
                             nil "\n")
@@ -768,12 +775,10 @@ defaults to prompting the user with a completion list."
     ("d" "org => elisp" km-edit-copy-org-as-elisp-doc :inapt-if-not
      km-edit-get-region)
     ("n" "as prin1 to string" km-edit-copy-prin1-to-string-at-point
-     :inapt-if-not (lambda ()
-                     (bounds-of-thing-at-point 'sexp)))
+     :inapt-if-not km-edit--has-region-or-sexp)
     ("N" "as prin1 to string one line"
      km-edit-copy-prin1-to-string-no-newlines
-     :inapt-if-not (lambda ()
-                     (bounds-of-thing-at-point 'sexp)))
+     :inapt-if-not km-edit--has-region-or-sexp)
     ("a" "sexp at point"
      km-edit-copy-sexp-or-region-at-point
      :inapt-if-not (lambda ()
