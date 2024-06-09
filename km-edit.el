@@ -1031,6 +1031,47 @@ to the current buffer."
   (when (fboundp 'lv-delete-window)
     (lv-delete-window)))
 
+(defun km-edit-format-slack-messages ()
+  "Format selected Slack messages into a quoted block."
+  (interactive)
+  (let ((rbeg (or (and (region-active-p)
+                       (use-region-p)
+                       (region-beginning))
+                  (point-min)))
+        (rend (or (region-end)
+                  (point-max)))
+        (re "\\(^[a-z\s]+\\)\n[\s]*[0-9][0-9]?:[0-9][0-9]\\([\s][PA][M]\\)$"))
+    (goto-char rbeg)
+    (let ((results)
+          (done))
+      (while
+          (when (and (not done)
+                     (> rend (point)))
+            (re-search-forward
+             re
+             rend
+             t 1))
+        (let* ((author (match-string-no-properties 1))
+               (beg (point))
+               (end
+                (when (re-search-forward
+                       re
+                       nil rend 1)
+                  (goto-char (match-beginning 0))
+                  (point)))
+               (msg (buffer-substring-no-properties beg (or end rend))))
+          (unless end
+            (setq done t))
+          (setq msg (replace-regexp-in-string "^[0-9][0-9]?:[0-9][0-9]$" "" msg))
+          (setq msg (replace-regexp-in-string "^:[_a-z0-9+-]+:\n[0-9]+" "" msg))
+          (setq msg (replace-regexp-in-string "^:[_a-z0-9+-]+:\n[0-9]+" "" msg))
+          (setq msg (replace-regexp-in-string "^[\n][\n]+" "\n" msg))
+          (setq msg (format "*%s*:\n#+begin_quote\n%s\n#+end_quote" (string-trim author) (string-trim msg)))
+          (setq results (push msg results))))
+      (setq results (string-join (nreverse results) "\n\n"))
+      (delete-region rbeg rend)
+      (insert results))))
+
 
 (provide 'km-edit)
 ;;; km-edit.el ends here
