@@ -57,6 +57,28 @@ will be disabled if they are active."
   :group 'km-edit
   :type '(repeat (symbol :tag "Major Mode")))
 
+(defcustom km-edit-iedit-default-occurence-chars-alist '((org-mode . "_$A-Za-z0-9-"))
+  "Alist mapping major modes to default occurrence characters for iedit.
+
+An alist mapping major modes or lists of derived modes to strings
+of characters. Each key can be a symbol representing a major mode
+or a list of symbols representing derived modes. The value
+associated with each key is a string of characters used to set
+`iedit-default-occurrence-local'.
+
+See also `km-edit-setup-iedit-default-occurence'."
+  :group 'km-edit
+  :type '(alist
+          :key-type
+          (radio :value org-mode
+           (symbol
+            :tag "Derivered Mode")
+           (repeat
+            :tag "Derivered Modes"
+            :value (org-mode)
+            (symbol)))
+          :value-type (string :value "_$A-Za-z0-9-")))
+
 ;;;###autoload
 (defun km-edit-indent-buffer-or-region ()
   "Indent active region or the entire buffer."
@@ -907,8 +929,52 @@ defaults to prompting the user with a completion list."
         (t
          (visual-line-mode 1))))
 
+;;;###autoload
+(defun km-edit-format-slack-messages ()
+  "Format selected Slack messages into a quoted block."
+  (interactive)
+  (let ((rbeg (or (and (region-active-p)
+                       (use-region-p)
+                       (region-beginning))
+                  (point-min)))
+        (rend (or (region-end)
+                  (point-max)))
+        (re "\\(^[a-z\s]+\\)\n[\s]*[0-9][0-9]?:[0-9][0-9]\\([\s][PA][M]\\)$"))
+    (goto-char rbeg)
+    (let ((results)
+          (done))
+      (while
+          (when (and (not done)
+                     (> rend (point)))
+            (re-search-forward
+             re
+             rend
+             t 1))
+        (let* ((author (match-string-no-properties 1))
+               (beg (point))
+               (end
+                (when (re-search-forward
+                       re
+                       nil rend 1)
+                  (goto-char (match-beginning 0))
+                  (point)))
+               (msg (buffer-substring-no-properties beg (or end rend))))
+          (unless end
+            (setq done t))
+          (setq msg (replace-regexp-in-string "^[0-9][0-9]?:[0-9][0-9]$" "" msg))
+          (setq msg (replace-regexp-in-string "^:[_a-z0-9+-]+:\n[0-9]+" "" msg))
+          (setq msg (replace-regexp-in-string "^:[_a-z0-9+-]+:\n[0-9]+" "" msg))
+          (setq msg (replace-regexp-in-string "^[\n][\n]+" "\n" msg))
+          (setq msg (format "*%s*:\n#+begin_quote\n%s\n#+end_quote" (string-trim author) (string-trim msg)))
+          (setq results (push msg results))))
+      (setq results (string-join (nreverse results) "\n\n"))
+      (delete-region rbeg rend)
+      (insert results))))
+
 (defvar iedit-case-sensitive)
 (defvar iedit-mode-occurrence-keymap)
+(defvar iedit-default-occurrence-local)
+(defvar iedit-occurrence-type-local)
 
 ;;;###autoload
 (defun km-edit-iedit-replace-occurrences (&optional to-string)
@@ -1031,46 +1097,37 @@ to the current buffer."
   (when (fboundp 'lv-delete-window)
     (lv-delete-window)))
 
-(defun km-edit-format-slack-messages ()
-  "Format selected Slack messages into a quoted block."
-  (interactive)
-  (let ((rbeg (or (and (region-active-p)
-                       (use-region-p)
-                       (region-beginning))
-                  (point-min)))
-        (rend (or (region-end)
-                  (point-max)))
-        (re "\\(^[a-z\s]+\\)\n[\s]*[0-9][0-9]?:[0-9][0-9]\\([\s][PA][M]\\)$"))
-    (goto-char rbeg)
-    (let ((results)
-          (done))
-      (while
-          (when (and (not done)
-                     (> rend (point)))
-            (re-search-forward
-             re
-             rend
-             t 1))
-        (let* ((author (match-string-no-properties 1))
-               (beg (point))
-               (end
-                (when (re-search-forward
-                       re
-                       nil rend 1)
-                  (goto-char (match-beginning 0))
-                  (point)))
-               (msg (buffer-substring-no-properties beg (or end rend))))
-          (unless end
-            (setq done t))
-          (setq msg (replace-regexp-in-string "^[0-9][0-9]?:[0-9][0-9]$" "" msg))
-          (setq msg (replace-regexp-in-string "^:[_a-z0-9+-]+:\n[0-9]+" "" msg))
-          (setq msg (replace-regexp-in-string "^:[_a-z0-9+-]+:\n[0-9]+" "" msg))
-          (setq msg (replace-regexp-in-string "^[\n][\n]+" "\n" msg))
-          (setq msg (format "*%s*:\n#+begin_quote\n%s\n#+end_quote" (string-trim author) (string-trim msg)))
-          (setq results (push msg results))))
-      (setq results (string-join (nreverse results) "\n\n"))
-      (delete-region rbeg rend)
-      (insert results))))
+(defun km-edit-default-ocurrence (&optional chars)
+  "Return the substring of the buffer between characters matching CHARS.
+
+Optional argument CHARS is a string of characters to consider as part of the
+occurrence."
+  (let* ((chars (or chars "_$A-Za-z0-9-"))
+         (beg (save-excursion
+                (skip-chars-backward chars)
+                (point)))
+         (end (save-excursion
+                (skip-chars-forward chars)
+                (point)))
+         (name (buffer-substring-no-properties beg end)))
+    (unless (string-empty-p name)
+      name)))
+
+;;;###autoload
+(defun km-edit-setup-iedit-default-occurence ()
+  "Set `iedit-default-occurrence-local' based on `major-mode'.
+
+Example usage:
+
+\\=(add-hook \\='after-change-major-mode-hook #\\='km-edit-setup-iedit-default-occurence)"
+  (when-let ((chars (cdr (or (assq major-mode
+                                   km-edit-iedit-default-occurence-chars-alist)
+                             (seq-find
+                              (pcase-lambda (`(,k . ,_v))
+                                (derived-mode-p k))
+                              km-edit-iedit-default-occurence-chars-alist)))))
+    (setq iedit-default-occurrence-local (apply-partially #'km-edit-default-ocurrence
+                                                          chars))))
 
 
 (provide 'km-edit)
