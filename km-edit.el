@@ -353,6 +353,7 @@ selected one."
   (let ((inhibit-read-only t))
     (let* ((str (buffer-substring-no-properties beg
                                                 end))
+           (str (car (split-string str "[\n]+" t)))
            (codings (find-coding-systems-string str))
            (alist (mapcan (lambda (new-coding)
                             (mapcar (lambda (coding)
@@ -976,6 +977,106 @@ defaults to prompting the user with a completion list."
 (defvar iedit-default-occurrence-local)
 (defvar iedit-occurrence-type-local)
 
+(defvar km-edit--minibuffer-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C->") #'km-edit-multi-source-select-next)
+    (define-key map (kbd "C-<") #'km-edit-multi-source-select-prev)
+    (define-key map (kbd "C-.") #'km-edit-multi-source-read-source)
+    map)
+  "Keymap to use in minibuffer.")
+
+(defun km-edit-multi-source-select-next ()
+  "Throw to the catch tag ='next with 1."
+  (interactive)
+  (throw 'next
+         1))
+
+(defun km-edit-multi-source-select-prev ()
+  "Navigate to the previous item in a multi-source selection."
+  (interactive)
+  (throw 'next
+         -1))
+
+
+(defun km-edit-multi-source-read-source ()
+  "Prompt user to select a source and calculate index offset."
+  (interactive)
+  (throw 'next t))
+
+(defun km-edit--index-switcher (step current-index switch-list)
+  "Increase or decrease CURRENT-INDEX depending on STEP value and SWITCH-LIST."
+  (cond ((> step 0)
+         (if (>= (+ step current-index)
+                 (length switch-list))
+             0
+           (+ step current-index)))
+        ((< step 0)
+         (if (or (<= 0 (+ step current-index)))
+             (+ step current-index)
+           (1- (length switch-list))))
+        (t current-index)))
+
+
+
+(defun km-edit-iedit-read-occurence (prompt items)
+  "Read a string from the minibuffer with optional completion and default values.
+
+Argument PROMPT is a string used to prompt the user for input.
+
+Argument ITEMS is a list of strings representing the possible choices."
+  (let ((curr-idx 0)
+        (curr)
+        (reader 'read-string))
+    (while
+        (let ((item (catch 'next
+                      (minibuffer-with-setup-hook
+                          (lambda ()
+                            (use-local-map
+                             (let ((map
+                                    (copy-keymap
+                                     km-edit--minibuffer-map)))
+                               (set-keymap-parent map (current-local-map))
+                               map)))
+                        (let ((window-selection-change-functions nil))
+                          (let* ((default-rep (nth curr-idx items))
+                                 (prompt-with-def
+                                  (concat
+                                   prompt
+                                   (unless (string-suffix-p " "
+                                                            prompt)
+                                     " ")
+                                   (when default-rep
+                                     (format "(default %s) "
+                                             (propertize
+                                              (substring-no-properties
+                                               default-rep)
+                                              'face
+                                              'font-lock-function-name-face))))))
+                            (pcase reader
+                              ('completing-read (completing-read
+                                                 prompt-with-def
+                                                 items))
+                              (_ (read-string
+                                  (concat
+                                   (when items
+                                     (format "(%d/%d) " (1+ (or curr-idx
+                                                                0))
+                                             (length items)))
+                                   prompt-with-def)
+                                  nil nil
+                                  default-rep
+                                  nil)))))))))
+          (cond ((numberp item)
+                 (setq reader 'read-string)
+                 (setq curr-idx (km-edit--index-switcher item curr-idx items)))
+                ((eq item t)
+                 (setq reader 'completing-read))
+                ((stringp item)
+                 (setq curr item)
+                 nil))))
+    curr))
+
+(defvar iedit-occurrences-overlays)
 ;;;###autoload
 (defun km-edit-iedit-replace-occurrences (&optional to-string)
   "Replace all occurrences of a string with another string interactively.
@@ -990,14 +1091,39 @@ Optional argument TO-STRING is the string to replace occurrences with."
          (from-string (buffer-substring-no-properties
                        (overlay-start ov)
                        (overlay-end ov)))
-         (default-rep (car kill-ring))
          (to-string (if (not to-string)
-                        (read-string
-                         (format "Replace with: (default %s) "
-                                 default-rep)
-                         nil nil
-                         default-rep
-                         nil)
+                        (let ((choices
+                               (delete-dups
+                                (seq-drop-while (apply-partially #'equal
+                                                                 from-string)
+                                                kill-ring))))
+                          (unless (string-match-p "[\n]" from-string)
+                            (setq choices (seq-remove (apply-partially #'string-match-p "\n") choices)))
+                          (unless (string-match-p "[\s\t]" from-string)
+                            (setq choices (seq-remove (apply-partially #'string-match-p "[\s\t]") choices)))
+                          (km-edit-iedit-read-occurence
+                           (concat
+                            (format "Replace %d "
+                                    (length
+                                     iedit-occurrences-overlays))
+                            (if (= 1 (length iedit-occurrences-overlays))
+                                "occurence"
+                              "occurences")
+                            " of " (propertize
+                                    (truncate-string-to-width
+                                     (substring-no-properties
+                                      from-string
+                                      0
+                                      (string-match-p
+                                       "\n" from-string))
+                                     70
+                                     nil
+                                     nil
+                                     t)
+                                    'face
+                                    'font-lock-function-name-face)
+                            " with: ")
+                           choices))
                       to-string)))
     (iedit-apply-on-occurrences
      (lambda (beg end from-string to-string)
