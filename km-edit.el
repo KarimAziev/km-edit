@@ -43,7 +43,8 @@
 
 (defcustom km-edit-truncate-line-modes '(tabulated-list-mode
                                          gh-repo-list-mode
-                                         igist-list-mode)
+                                         igist-list-mode
+                                         osm-mode)
   "List of modes where lines should be truncated instead of wrapped.
 
 A list of major modes where lines should be truncated instead of
