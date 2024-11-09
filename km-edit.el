@@ -123,7 +123,7 @@ It should be a string, or an unary function that string or nil.
 
 Argument END is the end position of the region to be replaced.
 Argument BEG is the beginning position of the region to be replaced."
-  (when-let ((overlay (make-overlay beg end))
+  (when-let* ((overlay (make-overlay beg end))
              (rep (if (functionp replacement)
                       (funcall replacement)
                     replacement)))
@@ -285,7 +285,7 @@ In other cases insert string."
 (defun km-edit-copy-sexp-or-region-at-point ()
   "Copy region or sexp at point."
   (interactive)
-  (when-let ((bounds (bounds-of-thing-at-point 'sexp)))
+  (when-let* ((bounds (bounds-of-thing-at-point 'sexp)))
     (km-edit--kill-new (buffer-substring-no-properties
                         (car bounds)
                         (cdr bounds)))
@@ -333,7 +333,7 @@ Argument STR is the string to be added to the kill ring."
   "Return a string with the printed representation of region without new lines."
   (interactive)
   (require 'subr-x)
-  (when-let ((content (string-join
+  (when-let* ((content (string-join
                        (split-string
                         (km-edit-copy-prin1-to-string-at-point)
                         (if
@@ -607,7 +607,7 @@ Requires xr lib."
   "Copy regex at point to kill ring as `rx' syntax."
   (interactive)
   (require 'xr)
-  (when-let ((regex (km-edit--get-xr-to-rx-sexp)))
+  (when-let* ((regex (km-edit--get-xr-to-rx-sexp)))
     (km-edit--kill-new regex)
     (message "copied %s" regex)
     regex))
@@ -623,7 +623,7 @@ Requires xr lib."
             (cons (region-beginning)
                   (region-end))
           (save-excursion
-            (when-let ((str-start (nth 8 (syntax-ppss (point)))))
+            (when-let* ((str-start (nth 8 (syntax-ppss (point)))))
               (goto-char str-start)
               (when (looking-at "\"")
                 (cons (point)
@@ -759,7 +759,7 @@ defaults to prompting the user with a completion list."
    (propertize
     (or
      description
-     (when-let ((doc (replace-regexp-in-string
+     (when-let* ((doc (replace-regexp-in-string
                       "-" " " (capitalize (symbol-name
                                            mode)))))
        (replace-regexp-in-string "\\.$" ""
@@ -824,7 +824,7 @@ defaults to prompting the user with a completion list."
     ""
     ("u" "unquote region" km-edit-unqote-region
      :inapt-if-not (lambda ()
-                     (when-let ((reg (km-edit-get-region)))
+                     (when-let* ((reg (km-edit-get-region)))
                        (and (string-prefix-p "\"" reg)
                             (string-suffix-p "\"" reg)))))
     ("e" km-edit-split-string
@@ -1167,7 +1167,7 @@ binding is shadowed by another map.
 
 Optional argument BUFFER is the buffer in which the keymap is active; defaults
 to the current buffer."
-  (when-let ((value
+  (when-let* ((value
               (cond ((keymapp sym)
                      sym)
                     ((stringp sym)
@@ -1201,7 +1201,7 @@ to the current buffer."
   (when (and (bound-and-true-p iedit-mode)
              (fboundp 'lv-delete-window))
     (lv-delete-window)
-    (when-let ((msg
+    (when-let* ((msg
                 (string-join (seq-remove
                               (lambda (str)
                                 (or (string-empty-p str)
@@ -1247,7 +1247,7 @@ occurrence."
 Example usage:
 
 \\=(add-hook \\='after-change-major-mode-hook #\\='km-edit-setup-iedit-default-occurence)"
-  (when-let ((chars (cdr (or (assq major-mode
+  (when-let* ((chars (cdr (or (assq major-mode
                                    km-edit-iedit-default-occurence-chars-alist)
                              (seq-find
                               (pcase-lambda (`(,k . ,_v))
