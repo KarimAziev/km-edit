@@ -726,7 +726,7 @@ between empty lines before saving a buffer.
 When enabled, this mode ensures that any sequence of spaces on lines by
 themselves are deleted upon saving, maintaining a cleaner file structure. Toggle
 off this mode to disable this automatic cleanup behavior."
-  :lighter " kme-cln"
+  :lighter " WS-clean"
   :global nil
   (if km-edit-whitespace-cleanup-mode
       (add-hook 'before-save-hook #'km-edit-remove-spaces-between-empty-lines
@@ -1255,6 +1255,80 @@ Example usage:
                               km-edit-iedit-default-occurence-chars-alist)))))
     (setq iedit-default-occurrence-local (apply-partially #'km-edit-default-ocurrence
                                                           chars))))
+
+;;;###autoload
+(defun km-edit-increase-number-at-point-or-move-text-up ()
+  "Increase number at point or move text line up if no number exists."
+  (interactive)
+  (let* ((bounds (bounds-of-thing-at-point 'number)))
+    (if (not bounds)
+        (progn
+          (require 'move-text nil t)
+          (when (fboundp 'move-text-up)
+            (call-interactively #'move-text-up)))
+      (let* ((start (car bounds))
+             (end (cdr bounds))
+             (numstr (buffer-substring-no-properties start end))
+             (pt (point))
+             (dot-pos (string-match "\\." numstr))
+             (curr-col (current-column))
+             (new-str))
+        (if (not dot-pos)
+            (let ((num (string-to-number numstr)))
+              (setq new-str (number-to-string (1+ num))))
+          (let* ((frac-length (- (length numstr) dot-pos 1))
+                 (offset (- pt start dot-pos 1))
+                 (step
+                  (if (or (< offset 0)
+                          (>= offset frac-length))
+                      (/ 1.0 (expt 10 frac-length))
+                    (/ 1.0 (expt 10 (- frac-length offset)))))
+                 (num (string-to-number numstr))
+                 (newnum (+ num step))
+                 (fmt (format "%%.%df" frac-length)))
+            (setq new-str (format fmt newnum))))
+        (replace-region-contents start end (lambda () new-str))
+        (when (>= (length new-str)
+                  (length numstr))
+          (move-to-column curr-col))))))
+
+;;;###autoload
+(defun km-edit-decrease-number-at-point-or-move-text-down ()
+  "Decrease the number at point or move the text line down."
+  (interactive)
+  (let* ((bounds (bounds-of-thing-at-point 'number)))
+    (if (not bounds)
+        (progn
+          (require 'move-text nil t)
+          (when (fboundp 'move-text-down)
+            (call-interactively #'move-text-down)))
+      (let* ((start (car bounds))
+             (end (cdr bounds))
+             (numstr (buffer-substring-no-properties start end))
+             (pt (point))
+             (dot-pos (string-match "\\." numstr))
+             (curr-col (current-column))
+             (new-str))
+        (if (not dot-pos)
+            (let ((num (string-to-number numstr)))
+              (setq new-str (number-to-string (1- num))))
+          (let* ((frac-length (- (length numstr) dot-pos 1))
+                 (offset (- pt start dot-pos 1))
+                 (step
+                  (if (or (< offset 0)
+                          (>= offset frac-length))
+                      (/ 1.0 (expt 10 frac-length))
+                    (/ 1.0 (expt 10 (- frac-length offset)))))
+                 (num (string-to-number numstr))
+                 (newnum (- num step))
+                 (fmt (format "%%.%df" frac-length)))
+            (setq new-str (format fmt newnum))))
+        (replace-region-contents start end (lambda () new-str))
+        (when (>= (length new-str)
+                  (length numstr))
+          (move-to-column curr-col))))))
+
+
 
 
 (provide 'km-edit)
