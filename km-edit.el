@@ -1077,6 +1077,7 @@ Argument ITEMS is a list of strings representing the possible choices."
                  nil))))
     curr))
 
+
 (defvar iedit-occurrences-overlays)
 ;;;###autoload
 (defun km-edit-iedit-replace-occurrences (&optional to-string)
@@ -1328,7 +1329,80 @@ Example usage:
                   (length numstr))
           (move-to-column curr-col))))))
 
+(defun km-edit--overlay-make (start end &optional buffer front-advance
+                                    rear-advance &rest props)
+  "Create a new overlay with range BEG to END in BUFFER and return it.
+If omitted, BUFFER defaults to the current buffer.
+START and END may be integers or markers.
+The fourth arg FRONT-ADVANCE, if non-nil, makes the marker
+for the front of the overlay advance when text is inserted there
+\(which means the text *is not* included in the overlay).
+The fifth arg REAR-ADVANCE, if non-nil, makes the marker
+for the rear of the overlay advance when text is inserted there
+\(which means the text *is* included in the overlay).
+PROPS is a plist to put on overlay."
+  (let ((overlay (make-overlay start end buffer front-advance
+                               rear-advance)))
+    (dotimes (idx (length props))
+      (when (eq (logand idx 1) 0)
+        (let* ((prop-name (nth idx props))
+               (val (plist-get props prop-name)))
+          (overlay-put overlay prop-name val))))
+    overlay))
 
+
+;;;###autoload
+(defun km-edit-region-to-alist (beg end)
+  "Convert selected region into an alist format and optionally replace it.
+
+Argument BEG is the beginning position of the region to be edited.
+
+Argument END is the ending position of the region to be edited."
+  (interactive "r")
+  (let* ((reg (split-string (string-trim (buffer-substring-no-properties
+                                          beg
+                                          end))
+                            "\n"))
+         (buff (current-buffer))
+         (format-str (read-string "Format line as " "(\"%s\" . \"%s\")"))
+         (rep (concat
+               "'("
+               (mapconcat
+                (lambda (line)
+                  (let ((parts
+                         (split-string line))
+                        (title))
+                    (setq title (pop parts))
+                    (format format-str
+                            title
+                            (string-join parts "\s"))))
+                reg "\n")
+               ")")))
+    (if (called-interactively-p 'any)
+        (if-let* ((bounds (and
+                           (let ((ov (km-edit--overlay-make beg end buff)))
+                             (unwind-protect
+                                 (progn
+                                   (setq ov
+                                         (km-edit--overlay-make
+                                          beg end buff
+                                          nil nil
+                                          'before-string
+                                          (propertize (purecopy
+                                                       (concat rep "\n"))
+                                                      'face 'font-lock-property-name-face)))
+                                   (yes-or-no-p "Replace region?"))
+                               (when (overlayp ov)
+                                 (delete-overlay ov))))
+                           (list beg
+                                 end))))
+            (progn
+              (goto-char (car bounds))
+              (apply #'delete-region bounds)
+              (insert rep))
+          (kill-new rep)
+          (message "Copied to clipboard"))
+      rep)))
 
 
 (provide 'km-edit)
