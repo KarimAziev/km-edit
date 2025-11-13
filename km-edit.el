@@ -6,7 +6,7 @@
 ;; URL: https://github.com/KarimAziev/km-edit
 ;; Version: 0.1.0
 ;; Keywords: lisp
-;; Package-Requires: ((emacs "28.1") (transient "0.6.0"))
+;; Package-Requires: ((emacs "28.1") (transient "0.10.1"))
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; This file is NOT part of GNU Emacs.
@@ -1079,6 +1079,7 @@ Argument ITEMS is a list of strings representing the possible choices."
 
 
 (defvar iedit-occurrences-overlays)
+(defvar iedit-updating)
 ;;;###autoload
 (defun km-edit-iedit-replace-occurrences (&optional to-string)
   "Replace all occurrences of a string with another string interactively.
@@ -1127,13 +1128,16 @@ Optional argument TO-STRING is the string to replace occurrences with."
                             " with: ")
                            choices))
                       to-string)))
-    (iedit-apply-on-occurrences
-     (lambda (beg end from-string to-string)
-       (goto-char beg)
-       (search-forward from-string end)
-       (replace-match to-string (not (and (not iedit-case-sensitive)
-                                          case-replace))))
-     from-string to-string)
+    (let ((iedit-updating t))
+      (save-excursion
+        (dolist (occurrence iedit-occurrences-overlays)
+          (let ((beg (overlay-start occurrence))
+                (end (overlay-end occurrence)))
+            (goto-char beg)
+            (search-forward from-string end)
+            (replace-match to-string
+                           (not (and (not iedit-case-sensitive)
+                                     case-replace)))))))
     (goto-char (+ (overlay-start ov) offset))))
 
 (defun km-edit--format-keymap (sym &optional full shadow prefix title with-menu
